@@ -1,84 +1,215 @@
-# Autonomous Vehicle UI & Control System Plan
-## Architecture: React (Frontend) + Flask (Backend/Signaling) + WebRTC (Streaming/Data)
+# Local Autonomous Vehicle Control Plan (Serverless / Point-to-Point)
 
-### 1. Executive Summary
-This plan outlines the architecture for a low-latency, bi-directional control platform for an autonomous vehicle (AV). The system uses **WebRTC** for real-time video streaming and control data transmission, ensuring minimal lag (<200ms) which is critical for remote operation. **Flask** serves as the Signaling Server and API, while **React** provides the user interface.
+## Overview
+This plan removes the need for a cloud-hosted server. Instead, the **Vehicle itself acts as the web server**. The user simply connects their laptop to the same Wi-Fi network as the vehicle (or connects directly to the vehicle's Hotspot) and opens the vehicle's IP address in a browser.
 
-### 2. System Architecture
+### Key constraints addressed:
+*   **No Hosting:** The Flask server runs on the vehicle's onboard computer.
+*   **Just Endpoints:** We use standard HTTP endpoints (`/offer`, `/answer`) to establish the connection, avoiding complex WebSocket servers if desired.
+*   **Modern Software:** Uses **WebRTC** for sub-200ms video latency (far superior to MJPEG) and **React** for the UI.
 
-#### A. Components
-1.  **The Vehicle (Computer 1):**
-    *   **Hardware:** Camera, Motor Controller, Onboard Computer (e.g., Jetson Nano, Raspberry Pi, or x86 Mini PC).
-    *   **Software:** Python script running `aiortc` (WebRTC client) and `socketio-client`.
-    *   **Role:** Captures video frames, encodes them, streams via WebRTC, and executes control commands received via Data Channels.
+## Architecture
 
-2.  **The Server (Intermediary/Endpoint):**
-    *   **Software:** Flask + Flask-SocketIO.
-    *   **Role:** Acts as the **Signaling Server** to handshake connections between the Vehicle and the User. It also hosts the React build artifacts.
-    *   **Deployment:** Can be hosted on the Vehicle itself (for local LAN) or a cloud instance (AWS/DigitalOcean) for remote control over the internet.
+1.  **Vehicle (Server):**
+    *   Runs **Flask** to serve the React files and handle signaling.
+    *   Runs **aiortc** (Python WebRTC) to capture camera frames and listen for control data.
+    *   Exposes endpoints: `GET /` (UI), `POST /offer` (Signaling).
 
-3.  **The User Interface (Computer 2):**
-    *   **Software:** React.js Web App.
-    *   **Role:** Decodes/displays the video stream, captures user inputs (keyboard/gamepad), and sends control packets.
+2.  **User (Client):**
+    *   Runs a browser with the **React App**.
+    *   Connects to `http://<VEHICLE_IP>:5000`.
+    *   Sends control commands (WASD/Joystick) directly via WebRTC Data Channels.
 
-#### B. Data Flow
-1.  **Signaling (Handshake):** Vehicle and User both connect to the Flask Server via WebSockets. They exchange SDP (Session Description Protocol) and ICE Candidates to establish a direct Peer-to-Peer (P2P) connection.
-2.  **Video Stream (UDP):** Vehicle sends encoded video (H.264/VP8) directly to the User's browser via `RTCPeerConnection`.
-3.  **Control Loop (UDP):** User's keyboard inputs -> React -> `RTCDataChannel` -> Vehicle -> Motor Driver.
+---
 
-### 3. Technology Stack
+## Part 1: The Vehicle Code (Python + Flask)
 
-*   **Frontend:** React, Material UI (for layout), `socket.io-client` (signaling), Native WebRTC API.
-*   **Backend:** Python Flask, `flask-socketio`, `eventlet` (for async socket handling).
-*   **Vehicle Client:** Python, `aiortc` (WebRTC implementation), `opencv-python` (video capture), `gpiozero` or serial libraries (motor control).
-*   **Network:** WebRTC (UDP-based for speed), STUN/TURN servers (Google's public STUN is free; Coturn for private TURN).
+**File:** `vehicle_server.py`
+**Dependencies:** `pip install flask aiortc opencv-python av`
 
-### 4. Implementation Steps
+```python
+import asyncio
+import json
+import logging
+import cv2
+from flask import Flask, render_template, Response, request, jsonify
+from flask_cors import CORS
+from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
+from av import VideoFrame
 
-#### Phase 1: The Signaling Server (Flask)
-*   **Goal:** Create a room-based handshake system.
-*   **Key Code:**
-    *   Initialize `SocketIO(app, cors_allowed_origins="*")`.
-    *   Events: `on('offer')`, `on('answer')`, `on('ice-candidate')`.
-    *   Logic: When User joins, notify Vehicle. Forward signals between them strictly.
+app = Flask(__name__, static_folder='../client/build', static_url_path='/')
+CORS(app)
 
-#### Phase 2: The Vehicle Client (Python)
-*   **Goal:** Capture video and stream it to a "virtual" peer.
-*   **Key Libraries:** `aiortc`, `av`.
-*   **Logic:**
-    *   Create `RTCPeerConnection`.
-    *   Add a video track (Custom class inheriting `VideoStreamTrack` that pulls frames from OpenCV).
-    *   Connect to Flask SocketIO.
-    *   On `offer` from user, set remote description, create `answer`, and send back.
-    *   **Control:** Setup `@pc.on("datachannel")` to listen for JSON packets (e.g., `{"x": 1, "y": 0}`) and map them to motor functions.
+# --- Hardware/Camera Logic ---
+class CameraVideoStreamTrack(VideoStreamTrack):
+    def __init__(self):
+        super().__init__()
+        self.cap = cv2.VideoCapture(0) # Open default camera
 
-#### Phase 3: The React Web App
-*   **Goal:** Display video and capture input.
-*   **Key Components:**
-    *   `<VideoPlayer />`: A component with a `<video autoPlay playsInline muted />` tag.
-    *   **Hook:** `useEffect` to initialize the WebRTC connection on mount.
-    *   **Input Handling:** Global event listeners for `keydown` and `keyup`. Maintain a state of pressed keys (e.g., `{w: true, a: false}`).
-    *   **Transmission:** Send control state every 50ms via `dataChannel.send()` to avoid flooding the network.
+    async def recv(self):
+        pts, time_base = await self.next_timestamp()
+        ret, frame = self.cap.read()
+        if not ret:
+            return None
 
-#### Phase 4: Safety & Optimization
-*   **Heartbeat:** Vehicle must stop if no data is received on the DataChannel for >500ms.
-*   **Rate Limiting:** Cap control packets to 20-30Hz.
-*   **Latency Management:** Use `RTCBundlePolicy: max-bundle` and VP8 codec for best real-time performance.
+        # Resize/Optimize frame here if needed
+        frame = cv2.resize(frame, (640, 480)) 
 
-### 5. Detailed Code Structure (Mental Model)
+        # Convert to av.VideoFrame
+        av_frame = VideoFrame.from_ndarray(frame, format="bgr24")
+        av_frame.pts = pts
+        av_frame.time_base = time_base
+        return av_frame
 
-**File Structure:**
-/project-root
-  /server (Flask)
-    app.py (Signaling logic)
-  /vehicle (Python)
-    robot_main.py (aiortc + hardware logic)
-  /client (React)
-    /src
-      components/
-        Cockpit.js (Video + Controls)
-      services/
-        webrtc.js (PeerConnection logic)
+# --- Global State ---
+pcs = set()
 
-### 6. Summary
-This architecture avoids the high latency of HTTP/MJPEG streaming by leveraging WebRTC. Flask performs the crucial role of introducing the two computers, after which they talk directly, allowing for high-definition, sub-second video and responsive control.
+# --- Web Server Endpoints ---
+@app.route('/')
+def index():
+    # Serve the React App (ensure React is built to ../client/build)
+    return app.send_static_file('index.html')
+
+@app.route('/offer', methods=['POST'])
+async def offer():
+    params = request.json
+    offer = RTCSessionDescription(sdp=params['sdp'], type=params['type'])
+
+    pc = RTCPeerConnection()
+    pcs.add(pc)
+
+    # Add Video Track
+    pc.addTrack(CameraVideoStreamTrack())
+
+    # Handle Control Data (DataChannel)
+    @pc.on("datachannel")
+    def on_datachannel(channel):
+        @channel.on("message")
+        def on_message(message):
+            data = json.loads(message)
+            print(f"Control Received: {data}")
+            # TODO: Hardware code here (e.g. GPIO.output(data['throttle']))
+
+    @pc.on("connectionstatechange")
+    async def on_connectionstatechange():
+        if pc.connectionState == "failed":
+            await pc.close()
+            pcs.discard(pc)
+
+    # Set Remote & Local Descriptions
+    await pc.setRemoteDescription(offer)
+    answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+
+    return jsonify({
+        "sdp": pc.localDescription.sdp,
+        "type": pc.localDescription.type
+    })
+
+def run_server():
+    # Note: aiortc requires asyncio loop, detailed setup needed for production
+    app.run(host='0.0.0.0', port=5000, threaded=True)
+
+if __name__ == "__main__":
+    # For dev purposes only. 
+    # In production, use Hypercorn/Uvicorn to mix Flask + Async properly
+    app.run(host='0.0.0.0', port=5000)
+```
+
+---
+
+## Part 2: The User Interface (React)
+
+**File:** `src/App.js`
+**Dependencies:** `npm install react-use-websocket` (Optional, standard fetch is fine)
+
+```jsx
+import React, { useEffect, useRef, useState } from 'react';
+
+function App() {
+  const videoRef = useRef(null);
+  const pc = useRef(new RTCPeerConnection());
+  const [status, setStatus] = useState("Disconnected");
+
+  // Input Handling
+  const handleKeyDown = (e) => {
+    if (pc.current.dataChannel?.readyState === "open") {
+      const command = { key: e.key, type: "DOWN" };
+      pc.current.dataChannel.send(JSON.stringify(command));
+    }
+  };
+
+  useEffect(() => {
+    // 1. Setup WebRTC
+    pc.current.ontrack = (event) => {
+      if (videoRef.current) {
+        videoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    // 2. Create Data Channel for Controls
+    const dc = pc.current.createDataChannel("controls");
+    pc.current.dataChannel = dc;
+
+    dc.onopen = () => setStatus("Connected (Ready to Drive)");
+
+    // 3. Negotiate Connection (Signaling via HTTP Endpoint)
+    const startConnection = async () => {
+      const offer = await pc.current.createOffer();
+      await pc.current.setLocalDescription(offer);
+
+      // Send Offer to Vehicle Endpoint
+      const response = await fetch('/offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sdp: offer.sdp,
+          type: offer.type
+        })
+      });
+
+      const answer = await response.json();
+      await pc.current.setRemoteDescription(answer);
+    };
+
+    startConnection();
+
+    // Cleanup
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  return (
+    <div style={{ textAlign: 'center', backgroundColor: '#222', color: '#fff', height: '100vh' }}>
+      <h1>Autonomous Vehicle Teleop</h1>
+      <h3>Status: {status}</h3>
+      <video 
+        ref={videoRef} 
+        autoPlay 
+        playsInline 
+        muted 
+        style={{ width: '80%', border: '2px solid red' }} 
+      />
+      <p>Use Keyboard to Control</p>
+    </div>
+  );
+}
+
+export default App;
+```
+
+## Part 3: How to Run (The "No Hosting" Workflow)
+
+1.  **On the Vehicle Computer:**
+    *   Save the Python code as `server.py`.
+    *   Build the React app: `npm run build`.
+    *   Copy the `build` folder to the same directory as `server.py` (rename it `../client/build` or adjust the path in python).
+    *   Run: `python server.py`.
+2.  **On the User Computer:**
+    *   Ensure you are on the same Wi-Fi.
+    *   Find the vehicle's IP (e.g., `192.168.1.50`).
+    *   Open Chrome and visit `http://192.168.1.50:5000`.
+    *   The video should appear immediately.
+
+## Why this works
+This architecture treats the vehicle as an **IoT Appliance**. It hosts its own control site. The "Signaling" is done over a simple HTTP POST request to the vehicle's IP, and then the heavy video traffic takes over via WebRTC P2P (UDP).
