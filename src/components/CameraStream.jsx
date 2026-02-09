@@ -3,7 +3,7 @@ function CameraStream() {
     <div>
       <h2>Live Camera Feed</h2>
       <img
-        src="http://localhost:5000/api/video_feed"
+        src="http://192.168.1.59:8000/api/video_feed"
         alt="Camera Stream"
         style={{
           width: "640px",
