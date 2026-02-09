@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 import reactLogo from "./assets/react.svg";
+import CameraStream from "./components/CameraStream";
 import viteLogo from "/vite.svg";
 
 function App() {
@@ -33,6 +34,7 @@ function App() {
         <p>
           The current time is {new Date(currentTime * 1000).toLocaleString()}.
         </p>
+        <CameraStream />
         <p>
           Edit <code>src/App.jsx</code> and save to test HMR
         </p>
