@@ -2,11 +2,23 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import reactLogo from "./assets/react.svg";
 import CameraStream from "./components/CameraStream";
+import { API_BASE } from "./config";
 import viteLogo from "/vite.svg";
 
 function App() {
   const [count, setCount] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+
+  fetch(`${API_BASE}/api/get_count`)
+    .then((res) => {
+      if (!res.ok) return Promise.reject(res);
+      return res.json();
+    })
+    .then((data) => {
+      // do something with data
+      setCount(data.count);
+    })
+    .catch(console.error);
 
   useEffect(() => {
     fetch("/api/time")
@@ -28,7 +40,26 @@ function App() {
       </div>
       <h1>Vite + React</h1>
       <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
+        <button
+          onClick={() => {
+            fetch(`${API_BASE}/api/increase_count`, {
+              method: "POST",
+              body: JSON.stringify({
+                message: "hello",
+              }),
+              headers: { "content-type": "application/json" },
+            })
+              .then((res) => {
+                if (!res.ok) return Promise.reject(res);
+                return res.json();
+              })
+              .then((data) => {
+                // do something with data
+                setCount(data.count);
+              })
+              .catch(console.error);
+          }}
+        >
           count is {count}
         </button>
         <p>
