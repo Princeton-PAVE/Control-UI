@@ -1,9 +1,13 @@
 import sys
 import time
-from flask import Flask, Response
+from flask import Flask, Response, request, jsonify
+from flask_cors import CORS
 import cv2
 
 app = Flask(__name__)
+CORS(app)
+
+count = 0
 
 # fixing redirect here but might be sketchy 
 @app.route('/')
@@ -45,6 +49,30 @@ def video_feed():
         mimetype='multipart/x-mixed-replace; boundary=frame'
     )
 
+@app.route("/api/get_count")
+def get_count():
+    return jsonify({
+        "count": count
+    })
+
+@app.route("/api/increase_count", methods=["POST"])
+def increase_count():
+    global count
+
+    data = request.get_json()
+    print(data)  # See what React sent
+
+    count += 1
+
+    return jsonify({
+        "message": "Data received!",
+        "count": count
+        # "you_sent": data
+    })
+
+# run through "npm run api" instead
+# if __name__ == "__main__":
+#     app.run(host="192.168.1.59", port=8000, debug=True)
 if __name__ == "__main__":
     host = "127.0.0.1" if sys.platform == "win32" else "192.168.1.59"  #  MAC and windows modification 
     app.run(host=host, port=8000, debug=True)
