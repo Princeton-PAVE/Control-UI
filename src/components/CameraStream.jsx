@@ -1,20 +1,32 @@
-import { API_BASE } from "../config";
+import { useEffect, useState } from "react";
 
-function CameraStream() {
-  const videoApi = `${API_BASE}/api/video_feed`;
+function CameraStream({ socket }) {
+  const [frame, setFrame] = useState(null);
+
+  useEffect(() => {
+    socket.on("video_frame", (data) => {
+      setFrame(`data:image/jpeg;base64,${data.frame}`);
+    });
+
+    return () => {
+      socket.off("video_frame");
+    };
+  }, [socket]);
 
   return (
     <div>
       <h2>Live Camera Feed</h2>
-      <img
-        src={videoApi}
-        alt="Camera Stream"
-        style={{
-          width: "640px",
-          borderRadius: "8px",
-          background: "black",
-        }}
-      />
+      {frame && (
+        <img
+          src={frame}
+          alt="Camera Stream"
+          style={{
+            width: "640px",
+            borderRadius: "8px",
+            background: "black",
+          }}
+        />
+      )}
     </div>
   );
 }

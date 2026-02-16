@@ -1,78 +1,90 @@
 import sys
 import time
-from flask import Flask, Response, request, jsonify
-from flask_cors import CORS
+import base64
 import cv2
+from flask import Flask
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 count = 0
 
-# fixing redirect here but might be sketchy 
-@app.route('/')
-def index():
-    return '''<!DOCTYPE html><html><body><h1>Video feed</h1>
-<img src="/api/video_feed" alt="feed" style="max-width:100%;" /></body></html>'''
-
-@app.route('/api/time')
-def get_current_time():
-    return {'time': time.time()}
-
-
-# Windows: DSHOW + camera 0. Mac: AVFOUNDATION + camera 1 (or 0).
+# Camera setup
 if sys.platform == "win32":
     camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 else:
     camera = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
+
 if not camera.isOpened():
     camera = cv2.VideoCapture(0)
 
-def generate_frames():
+
+# 🔌 CONNECTION EVENTS
+@socketio.on("connect")
+def handle_connect():
+    print("Client connected")
+
+    emit("connected", {"message": "Connected to server"})
+
+    # send initial state
+    emit("count_update", {"count": count})
+    emit("time_update", {"time": time.time()})
+
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    print("Client disconnected")
+
+
+# 🔢 COUNT EVENTS
+@socketio.on("increase_count")
+def handle_increase_count():
+    global count
+    count += 1
+
+    socketio.emit("count_update", {"count": count})  # broadcast
+
+
+@socketio.on("get_count")
+def handle_get_count():
+    emit("count_update", {"count": count})
+
+
+# ⏱ TIME STREAM
+def time_loop():
+    while True:
+        socketio.emit("time_update", {"time": time.time()})
+        socketio.sleep(1)
+
+
+# 🎥 CAMERA STREAM
+def camera_loop():
     while True:
         success, frame = camera.read()
         if not success:
-            break
+            continue
 
-        # Encode frame as JPEG
-        ret, buffer = cv2.imencode('.jpg', frame)
-        frame = buffer.tobytes()
+        _, buffer = cv2.imencode(".jpg", frame)
+        jpg_as_text = base64.b64encode(buffer).decode("utf-8")
 
-        # MJPEG stream format
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        socketio.emit("video_frame", {"frame": jpg_as_text})
+        socketio.sleep(0.03)  # ~30 FPS
 
-@app.route('/api/video_feed')
-def video_feed():
-    return Response(
-        generate_frames(),
-        mimetype='multipart/x-mixed-replace; boundary=frame'
-    )
 
-@app.route("/api/get_count")
-def get_count():
-    return jsonify({
-        "count": count
-    })
+streamsStarted = False
+# 🚀 START BACKGROUND TASKS
+@socketio.on("start_streams")
+def start_streams():
+    global streamsStarted
+    if not streamsStarted:
+        streamsStarted = True
+        print("start streams")
+        socketio.start_background_task(time_loop)
+        socketio.start_background_task(camera_loop)
 
-@app.route("/api/increase_count", methods=["POST"])
-def increase_count():
-    global count
 
-    data = request.get_json()
-    print(data)  # See what React sent
-
-    count += 1
-
-    return jsonify({
-        "message": "Data received!",
-        "count": count
-        # "you_sent": data
-    })
-
-# run through "npm run api" instead
-# if __name__ == "__main__":
-#     app.run(host="192.168.1.59", port=8000, debug=True)
 if __name__ == "__main__":
-    host = "127.0.0.1" if sys.platform == "win32" else "192.168.1.59"  #  MAC and windows modification 
-    app.run(host=host, port=8000, debug=True)
+    socketio.run(app, host="0.0.0.0", port=8000, debug=False)
