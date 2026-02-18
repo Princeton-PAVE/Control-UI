@@ -10,7 +10,7 @@ const socket = io(API_BASE);
 function App() {
   const [count, setCount] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const position = [51.505, -0.09];
+  const [position, setPosition] = useState([40.3504, -74.6571]);
 
   useEffect(() => {
     socket.on("connected", (data) => {
@@ -27,6 +27,17 @@ function App() {
 
     // start background streams
     socket.emit("start_streams");
+
+    fetch(`${API_BASE}/coords`)
+      .then((res) => res.json())
+      .then((data) => {
+        let coords = data.coords.split(",");
+        let x = Number(coords[0]);
+        let y = Number(coords[1]);
+        console.log([x, y]);
+        setPosition([x, y]);
+      })
+      .catch((err) => console.error(err));
   }, []);
 
   return (
@@ -43,9 +54,7 @@ function App() {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <Marker position={position}>
-          <Popup>
-            A pretty CSS3 popup. <br /> Easily customizable.
-          </Popup>
+          <Popup>{position.join(", ")}</Popup>
         </Marker>
       </MapContainer>
       <button

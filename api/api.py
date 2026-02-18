@@ -2,9 +2,17 @@ import sys
 import time
 import base64
 import cv2
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
+
+import re
+import json
+import urllib3
+
+url = 'http://ipinfo.io/json'
+response = urllib3.request("GET", url)
+location = response.json()["loc"]
 
 app = Flask(__name__)
 CORS(app)
@@ -38,6 +46,13 @@ def handle_connect():
 def handle_disconnect():
     print("Client disconnected")
 
+
+@app.route("/coords")
+def handle_coords():
+    data = {
+        "coords": location
+    }
+    return jsonify(data)
 
 # 🔢 COUNT EVENTS
 @socketio.on("increase_count")
