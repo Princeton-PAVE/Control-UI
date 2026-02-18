@@ -20,14 +20,16 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 count = 0
 
-# Camera setup
-if sys.platform == "win32":
-    camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-else:
-    camera = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
+currentFrame = None
 
-if not camera.isOpened():
-    camera = cv2.VideoCapture(0)
+# Camera setup
+# if sys.platform == "win32":
+#     camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+# else:
+#     camera = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
+
+# if not camera.isOpened():
+#     camera = cv2.VideoCapture(0)
 
 
 # 🔌 CONNECTION EVENTS
@@ -76,17 +78,24 @@ def time_loop():
 
 
 # 🎥 CAMERA STREAM
-def camera_loop():
-    while True:
-        success, frame = camera.read()
-        if not success:
-            continue
+# def camera_loop():
+#     while True:
+#         # success, frame = camera.read()
+#         # if not success:
+#         #     continue
 
-        _, buffer = cv2.imencode(".jpg", frame)
-        jpg_as_text = base64.b64encode(buffer).decode("utf-8")
+#         # _, buffer = cv2.imencode(".jpg", frame)
+#         # jpg_as_text = base64.b64encode(buffer).decode("utf-8")
 
-        socketio.emit("video_frame", {"frame": jpg_as_text})
-        socketio.sleep(0.03)  # ~30 FPS
+#         socketio.emit("video_frame", {"frame": jpg_as_text})
+#         socketio.sleep(0.03)  # ~30 FPS
+
+@socketio.on("video_frame")
+def handle_video_frame(data):
+    # data = { frame: base64 string }
+
+    # broadcast to all OTHER clients (computer)
+    emit("video_frame", data, broadcast=True, include_self=False)
 
 
 streamsStarted = False
@@ -98,7 +107,7 @@ def start_streams():
         streamsStarted = True
         print("start streams")
         socketio.start_background_task(time_loop)
-        socketio.start_background_task(camera_loop)
+        # socketio.start_background_task(camera_loop)
 
 
 if __name__ == "__main__":
