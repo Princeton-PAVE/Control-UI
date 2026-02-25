@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
 import io from "socket.io-client";
 import CameraStream from "./components/CameraStream";
+import IMUComponent from "./components/IMUComponent";
 import PhoneCamera from "./components/PhoneCamera";
 import { API_BASE } from "./config";
 
@@ -76,6 +77,7 @@ function App() {
       <p>The current time is {new Date(currentTime * 1000).toLocaleString()}</p>
       <CameraStream socket={socket} />
       <PhoneCamera socket={socket} sendData={sendData} />
+      <IMUComponent />
     </>
   );
 }
