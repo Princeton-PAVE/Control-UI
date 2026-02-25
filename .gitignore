@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# API self-signed HTTPS cert (regenerate with api/generate_cert.py)
+api/cert.pem
+api/key.pem

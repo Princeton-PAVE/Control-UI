@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iOS IMU Streamer</title>
+    <!-- Include Socket.IO client library -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; text-align: center; padding: 50px; }
+        button { padding: 15px 30px; font-size: 18px; color: white; border: none; border-radius: 8px; margin: 5px; }
+        #start-btn { background: #007aff; }
+        #stop-btn { background: #dc3545; display: none; }
+        #data-display { margin-top: 20px; text-align: left; background: #f0f0f0; padding: 15px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h2>IMU Data Streamer</h2>
+    <button id="start-btn">Start Sending IMU Data</button>
+    <button id="stop-btn">Stop Streaming</button>
+
+    <div id="data-display">Waiting for data...</div>
+
+    <script>
+        // Connect to your Flask server (Replace with your computer's local IP address)
+        const socket = io("https://10.49.84.242:8000"); 
+
+        let motionHandler = null;
+
+        document.getElementById('start-btn').addEventListener('click', requestMotionPermission);
+        document.getElementById('stop-btn').addEventListener('click', stopStreaming);
+
+        function requestMotionPermission() {
+            // iOS 13+ requires explicit permission via a user gesture
+            if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                DeviceMotionEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            startStreaming();
+                        } else {
+                            alert("Permission to access motion sensors was denied.");
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // Non-iOS 13+ devices (older iOS or Android)
+                startStreaming();
+            }
+        }
+
+        function startStreaming() {
+            document.getElementById('start-btn').style.display = 'none';
+            document.getElementById('stop-btn').style.display = 'inline-block';
+            const THROTTLE_MS = 50;
+            let lastEmit = 0;
+
+            motionHandler = (event) => {
+                const now = Date.now();
+                if (now - lastEmit < THROTTLE_MS) return;
+                lastEmit = now;
+
+                const imuPayload = {
+                    accel: {
+                        x: event.accelerationIncludingGravity.x,
+                        y: event.accelerationIncludingGravity.y,
+                        z: event.accelerationIncludingGravity.z
+                    },
+                    gyro: {
+                        x: event.rotationRate.alpha,
+                        y: event.rotationRate.beta,
+                        z: event.rotationRate.gamma
+                    },
+                    timestamp: now
+                };
+
+                socket.emit("imu_data", imuPayload);
+
+                document.getElementById('data-display').innerText =
+                    `Accel X: ${imuPayload.accel.x?.toFixed(2)}\n` +
+                    `Accel Y: ${imuPayload.accel.y?.toFixed(2)}\n` +
+                    `Gyro Z: ${imuPayload.gyro.z?.toFixed(2)}`;
+            };
+            window.addEventListener('devicemotion', motionHandler);
+        }
+
+        function stopStreaming() {
+            if (motionHandler) {
+                window.removeEventListener('devicemotion', motionHandler);
+                motionHandler = null;
+            }
+            document.getElementById('stop-btn').style.display = 'none';
+            document.getElementById('start-btn').style.display = 'inline-block';
+            document.getElementById('data-display').innerText = 'Streaming stopped.';
+        }
+    </script>
+</body>
+</html>
