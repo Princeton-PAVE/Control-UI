@@ -14,6 +14,7 @@ function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [position, setPosition] = useState([40.3504, -74.6571]);
   const [sendData, setSendData] = useState(false);
+  const [imu, setCurrentIMU] = useState("");
 
   useEffect(() => {
     socket.on("connected", (data) => {
@@ -26,6 +27,11 @@ function App() {
 
     socket.on("time_update", (data) => {
       setCurrentTime(data.time);
+    });
+
+    socket.on("imu", (data) => {
+      console.log(JSON.stringify(data));
+      setCurrentIMU(JSON.stringify(data.imu));
     });
 
     // start background streams
@@ -77,7 +83,8 @@ function App() {
       <p>The current time is {new Date(currentTime * 1000).toLocaleString()}</p>
       <CameraStream socket={socket} />
       <PhoneCamera socket={socket} sendData={sendData} />
-      <IMUComponent />
+      <IMUComponent socket={socket} sendData={sendData} />
+      <p>The streamed IMU is {imu}</p>
     </>
   );
 }

@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-export default function IMUComponent() {
-  const [motion, setMotion] = useState(null);
+export default function IMUComponent({ socket, sendData }) {
+  const [motion, setMotion] = useState("");
+  const motionRef = useRef("");
+  const intervalRef = useRef(null);
 
   const requestPermission = async () => {
     if (
@@ -17,20 +19,35 @@ export default function IMUComponent() {
         console.error(err);
       }
     } else {
-      console.log("Non-iOS??");
-      // DeviceMotionEvent.requestPermission();
-      // Non-iOS devices
       window.addEventListener("devicemotion", handleMotion);
     }
   };
 
+  useEffect(() => {
+    if (sendData) {
+      intervalRef.current = setInterval(() => {
+        console.log("Sending IMU", motionRef.current);
+
+        socket.emit("imu", {
+          imu: motionRef.current,
+        });
+      }, 50);
+    }
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [sendData, socket]);
+
   const handleMotion = (event) => {
-    console.log(motion);
-    setMotion({
+    const data = JSON.stringify({
       x: event.accelerationIncludingGravity?.x,
       y: event.accelerationIncludingGravity?.y,
       z: event.accelerationIncludingGravity?.z,
     });
+
+    motionRef.current = data; // always latest
+    setMotion(data); // UI update
   };
 
   useEffect(() => {

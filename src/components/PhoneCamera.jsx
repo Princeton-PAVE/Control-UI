@@ -56,6 +56,7 @@ export default function PhoneCamera({ socket, sendData }) {
 
   return (
     <>
+      <p>This device camera</p>
       <video ref={videoRef} autoPlay playsInline width="320" />
       <canvas ref={canvasRef} width="320" height="240" hidden />
     </>

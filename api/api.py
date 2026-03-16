@@ -97,6 +97,13 @@ def handle_video_frame(data):
     # broadcast to all OTHER clients (computer)
     emit("video_frame", data, broadcast=True, include_self=False)
 
+@socketio.on("imu")
+def handle_imu(data):
+    # data = { frame: base64 string }
+    print(data)
+    # broadcast to all OTHER clients (computer)
+    emit("imu", data, broadcast=True, include_self=False)
+
 
 streamsStarted = False
 # 🚀 START BACKGROUND TASKS
