@@ -22,17 +22,6 @@ count = 0
 
 currentFrame = None
 
-# Camera setup
-# if sys.platform == "win32":
-#     camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-# else:
-#     camera = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
-
-# if not camera.isOpened():
-#     camera = cv2.VideoCapture(0)
-
-
-# 🔌 CONNECTION EVENTS
 @socketio.on("connect")
 def handle_connect():
     print("Client connected")
@@ -56,13 +45,11 @@ def handle_coords():
     }
     return jsonify(data)
 
-# 🔢 COUNT EVENTS
 @socketio.on("increase_count")
 def handle_increase_count():
     global count
     count += 1
-
-    socketio.emit("count_update", {"count": count})  # broadcast
+    socketio.emit("count_update", {"count": count})
 
 
 @socketio.on("get_count")
@@ -70,43 +57,22 @@ def handle_get_count():
     emit("count_update", {"count": count})
 
 
-# ⏱ TIME STREAM
 def time_loop():
     while True:
         socketio.emit("time_update", {"time": time.time()})
         socketio.sleep(1)
 
 
-# 🎥 CAMERA STREAM
-# def camera_loop():
-#     while True:
-#         # success, frame = camera.read()
-#         # if not success:
-#         #     continue
-
-#         # _, buffer = cv2.imencode(".jpg", frame)
-#         # jpg_as_text = base64.b64encode(buffer).decode("utf-8")
-
-#         socketio.emit("video_frame", {"frame": jpg_as_text})
-#         socketio.sleep(0.03)  # ~30 FPS
-
 @socketio.on("video_frame")
 def handle_video_frame(data):
-    # data = { frame: base64 string }
-
-    # broadcast to all OTHER clients (computer)
     emit("video_frame", data, broadcast=True, include_self=False)
 
 @socketio.on("imu")
 def handle_imu(data):
-    # data = { frame: base64 string }
-    print(data)
-    # broadcast to all OTHER clients (computer)
     emit("imu", data, broadcast=True, include_self=False)
 
 
 streamsStarted = False
-# 🚀 START BACKGROUND TASKS
 @socketio.on("start_streams")
 def start_streams():
     global streamsStarted
@@ -114,7 +80,6 @@ def start_streams():
         streamsStarted = True
         print("start streams")
         socketio.start_background_task(time_loop)
-        # socketio.start_background_task(camera_loop)
 
 
 if __name__ == "__main__":

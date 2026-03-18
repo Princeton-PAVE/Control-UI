@@ -81,8 +81,8 @@ function App() {
         Current send data: {sendData.toString()}
       </button>
       <p>The current time is {new Date(currentTime * 1000).toLocaleString()}</p>
-      <CameraStream socket={socket} />
-      <PhoneCamera socket={socket} sendData={sendData} />
+      <CameraStream socket={socket} /> {/* Receive from server */}
+      <PhoneCamera socket={socket} sendData={sendData} /> {/* Send to server */}
       <IMUComponent socket={socket} sendData={sendData} />
       <p>The streamed IMU is {imu}</p>
     </>
